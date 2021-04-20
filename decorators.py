@@ -100,56 +100,70 @@ MEMBER PROPERTY DESCRIPTORS
         the class gives access to autocreate.parent_reference(), which gives access to the containing class
         decorating a member function will result in a write-once-read-many member variable that is initialised on access with the provided function and cached thereafter
 
-        Example usage:
-            class outer(some_base_class):
-                props = property_store()
-                op1 = props.reactive(1)
+Example usage:
 
-                @autocreate
-                class inner(another_base_class):
-                    parent = autocreate.parent_reference()
-                    props = property_store()
-                    ip1 = props.reactive(2)
-                    
-                    @parent.op1.trigger
-                    def on_op1(self, source):
-                        print( (self,source) )
-                    
-                    @autocreate
-                    class inner_inner(yet_another_one):
-                        parent = autocreate.parent_reference()
-                        props = property_store()                        
-                        iip1 = props.reactive(3)
-                    
-                        @parent.parent.op1.trigger
-                        def on_op1(self, source):
-                            print( (self,source) )
-                        
-                        @props.cached(iip1, parent.ip1, parent.parent.op1)
-                        def iip2(self):
-                            return (self.iip1, self.parent.ip1, self.parent.parent.op1)
-                
-                @inner.ip1.trigger
-                def on_ip1(self, source):
-                    print( (self,source) )
+class base1:
+    def __init__(self, param):
+        print()
 
-                @inner.inner_inner.parent.parent.inner.inner_inner.parent.parent.op1.trigger
-                def in_and_out(self,source):
-                    print( (self,source) )
+class base2:
+    pass
 
-                @props.cached(op1,inner.ip1,inner.inner_inner.iip1)
-                def op2(self):
-                    return (self.op1,self.inner.ip1,self.inner.inner_inner.iip1)
+@baseinit(kwargs={param = 2})
+class outer(base):
+    props = property_store()
+    op1 = props.reactive(1)
 
-                @autocreate
-                def op3(self):
-                    return 42
+    @autocreate
+    class inner(base2):
+        parent = autocreate.parent_reference()
+        props = property_store()
+        ip1 = props.reactive(2)
+        
+        @autocreate
+        def worm(self):
+            return "Worm"
 
-            o = outer()
-            o.op1 = 4
-            o.inner.ip1 = 5
-            o.inner.inner_inner.iip1 = 6
-            o.op3
+        @parent.op1.trigger
+        def on_op1(self, source):
+            print( (self,source) )
+        
+        @autocreate
+        class inner_inner:
+            parent = autocreate.parent_reference()
+            props = property_store()
+            iip1 = props.reactive(3)
+        
+            @parent.parent.op1.trigger
+            def on_op1(self, source):
+                print( (self,source) )
+            
+            @props.cached(iip1, parent.ip1, parent.parent.op1)
+            def iip2(self):
+                return (self.iip1, self.parent.ip1, self.parent.parent.op1)
+    
+    @inner.ip1.trigger
+    def on_ip1(self, source):
+        print( (self,source) )
+
+    @inner.inner_inner.parent.parent.inner.inner_inner.parent.parent.op1.trigger
+    def in_and_out(self,source):
+        print( (self,source) )
+
+    @props.cached(op1,inner.ip1,inner.inner_inner.iip1)
+    def op2(self):
+        return (self.op1,self.inner.ip1,self.inner.inner_inner.iip1)
+
+    @autocreate
+    def op3(self):
+        return 42
+
+o = outer()
+o.op1 = 4
+o.inner.ip1 = 5
+o.inner.inner_inner.iip1 = 6
+o.op3
+o.worm
 
 """
 

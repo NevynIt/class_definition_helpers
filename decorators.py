@@ -695,29 +695,29 @@ def baseinit(class_to_decorate=None, *, args=(), kwargs={}, mixargs=False):
         if isinstance(class_to_decorate, type):
             old_init = class_to_decorate.__init__
             base_init = super(class_to_decorate,class_to_decorate).__init__
-            if old_init != base_init:
-                def new_init(self, *inner_args, **inner_kwargs):
-                    nonlocal args, kwargs, mixargs, old_init, base_init
-                    if args == None:
-                        targs = inner_args
-                    else:
-                        targs = list(args)
-                        if mixargs: #this could be done in a thousand ways
-                            for i in range(min(len(args),len(inner_args))):
-                                targs[i] = inner_args[i]
-                        
-                    if kwargs == None:
-                        kwargs = inner_kwargs
-                    else:
-                        tkwargs = dict(kwargs)
-                        if mixargs: #this could be done in a thousand ways
-                            for k in kwargs.keys():
-                                if k in inner_kwargs:
-                                    tkwargs[k] = inner_kwargs[k]
+            def new_init(self, *inner_args, **inner_kwargs):
+                nonlocal args, kwargs, mixargs, old_init, base_init
+                if args == None:
+                    targs = inner_args
+                else:
+                    targs = list(args)
+                    if mixargs: #this could be done in a thousand ways
+                        for i in range(min(len(args),len(inner_args))):
+                            targs[i] = inner_args[i]
+                    
+                if kwargs == None:
+                    kwargs = inner_kwargs
+                else:
+                    tkwargs = dict(kwargs)
+                    if mixargs: #this could be done in a thousand ways
+                        for k in kwargs.keys():
+                            if k in inner_kwargs:
+                                tkwargs[k] = inner_kwargs[k]
 
-                    base_init(self, *targs, **tkwargs)
+                base_init(self, *targs, **tkwargs)
+                if old_init != base_init:
                     old_init(self, *inner_args, **inner_kwargs)
-                class_to_decorate.__init__ = new_init
+            class_to_decorate.__init__ = new_init
         else:
             raise TypeError
         return class_to_decorate
@@ -756,18 +756,16 @@ class delayed_callback:
         self.fnc(instance, source)
 
     def attach(self, prop):
+        "adds callbacks on descriptors"
         new_path = ()
         for key in self.prop_path:
             prop = getattr(prop,key)
             new_path = (key,) + new_path
             if isinstance(prop, parent_reference):
-                if prop._parent_class == None:
-                    #not created yet, delay again
-                    prop._delayed_callbacks.append(delayed_callback(self.fnc,self.prop_path[len(new_path):],self.instance_path))
-                    return
-                else:
-                    self.instance_path = (prop._parent_class.name, ) + self.instance_path
-                    prop = prop._parent_class.ownerclass
+                assert prop._parent_class == None
+                #not created yet, delay again
+                prop._delayed_callbacks.append(delayed_callback(self.fnc,self.prop_path[len(new_path):],self.instance_path))
+                return
             elif isinstance(prop, autocreate):
                 self.instance_path = (prop.parent_reference_member_name, ) + self.instance_path
                 if prop.wrapped:
@@ -775,6 +773,15 @@ class delayed_callback:
                 else:
                     prop = prop.factory
         prop.add_callback(self)
+    
+    def add_callback(self, parent):
+        "adds callbacks on instances"
+        prop = parent
+        for key in self.prop_path[:-1]:
+            prop = getattr(prop, key)
+        descriptor = getattr(type(prop), self.prop_path[-1])
+        slot = descriptor.get_slot(prop)
+        slot.add_callback(types.MethodType(self, parent))
 
 class attribute_reference:
     def __init__(self, parent, name):
@@ -851,28 +858,43 @@ class autocreate:
         self._delayed_callbacks = []
         if type(factory) is type:
             class wrapper(factory):
-                def __init__(child, parent):
-                    #assign instance to all parent references
-                    for k,v in vars(factory).items():
-                        if isinstance(v, parent_reference):
-                            vars(child)[k] = parent
-                    super().__init__()
+                def __init__(child):
+                    #init will be called by __get__
+                    pass
             wrapper.__qualname__ = factory.__qualname__+"<>"
             wrapper.__module__ = factory.__module__
             wrapper.__name__ = factory.__name__+"<>"
             self.factory = wrapper
-            self.wrapped = True
+            self.wrapped = factory
         else:
             self.factory = factory
-            self.wrapped = False
+            self.wrapped = None
 
     def __get__(self, instance, owner=None):
         if instance == None:
             return self
         if not self.name in vars(instance):
             vars(instance)[self.name] = None #canary to identify circular references
-            product = self.factory(instance)
-            vars(instance)[self.name] = product
+            if self.wrapped:
+                product = self.factory()
+                vars(instance)[self.name] = product
+
+                #assign instance to all parent references
+                for k,v in vars(self.wrapped).items():
+                    if isinstance(v, parent_reference):
+                        vars(product)[k] = instance
+                
+                #call the original __init__ -- not sure this should be done here or after the callbacks
+                self.wrapped.__init__(product)
+                
+                #add the callbacks that have been queued in the autocreate descriptor
+                for trg in self._delayed_callbacks:
+                    trg.prop_path = (self.name, ) + trg.prop_path
+                    trg.add_callback(instance)
+            else:
+                product = self.factory(instance)
+                vars(instance)[self.name] = product                
+
         return vars(instance)[self.name]
 
     #TODO: __set__ could be added to make non-wrapped autocreates modifiable after init
@@ -883,9 +905,9 @@ class autocreate:
         self.name = name
         self.ownerclass = owner
         self.parent_reference_member_name = None
-        #add the callbacks that have been queued in properties of the outer object
+        #add the callbacks that have been queued in the parent_references of the inner object
         if self.wrapped:
-            factory = inspect.getmro(self.factory)[1]
+            factory = self.wrapped
             for k,v in vars(factory).items():
                 if isinstance(v, parent_reference):
                     self.parent_reference_member_name = k
@@ -893,11 +915,6 @@ class autocreate:
                     for trg in v._delayed_callbacks:
                         trg.instance_path = (name, ) + trg.instance_path
                         trg.attach(owner)
-        
-        #add the callbacks that have been queued in properties of the inner object
-        for trg in self._delayed_callbacks:
-            trg.prop_path = (name, ) + trg.prop_path
-            trg.attach(owner)
 
     def __getattr__(self, name): #TODO: fix member names so that they do not obscure too much the user defined __getattr__
         return attribute_reference(self, name)

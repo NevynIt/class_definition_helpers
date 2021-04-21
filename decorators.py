@@ -1,7 +1,7 @@
 """
 CLASS DEFINITION HELPERS
 
-CLASS DECORATORS
+CLASS
     @baseinit(class_to_decorate=None, *, args=(), kwargs={}, mixargs=False)
         updates the __init__ to automatically call super().__init__ at the beginning
         can also be used directly without parameters, and in that case will call the base_class without parameters
@@ -40,9 +40,10 @@ MEMBER PROPERTY DESCRIPTORS
             reactive(default_value = None, *, readonly = false)
                 base class for the next ones
                 instances includes the following methods
-                    add_observer(fnc, key=None)
-                        promises to call fnc(source) as soon as the value of the property has changed
-                    del_observer(key)
+                    add_callback(fnc, key=None)
+                        promises to call fnc(source) as soon as the value of the property has changed, if key == None, key will be id(fnc)
+                        returns fnc, so it can be used as a decorator
+                    del_callback(key)
                         removed the callback fnc from the list
                     alert(reason = None)
                         receives a notification from source, the default behaviour is to pass the alert to the observers as is
@@ -50,22 +51,20 @@ MEMBER PROPERTY DESCRIPTORS
                         internal implementation to call each of the callbacks
                         if source = none, will pass self to each callback
                 the descriptor itself includes
-                    add_observer(fnc, key=None)
+                    add_callback(fnc, key=None)
                         promises to call fnc(source) bound to the actual instance as soon as the value of the property has changed
                         fnc should take a single argument, which will be the reason of the alert
                         the reason is a tuple of object, with the "closest" reasons first, and the very initial reason last
-                    del_observer(key)
-                        removed the callback fnc from the list
-                    trigger(fnc)
-                        this is made to be used as a decorator and calls add_observer
                         NOTE:
-                            DO NOT use property descriptors from other classes (not even base classes) in this way, as it would break these classes
-                            use inherited() to create a reference to the base class property and add triggers to it
+                            DO NOT use add_callback on property descriptors from other classes (not even base classes) in this way, as it would break these classes
+                            use inherited() to create a reference to the base class property and add callbacks to it
+                    del_callback(key)
+                        removed the callback fnc from the list
             
             inherited()
                 creates a copy of the same property from the base class, so that new observers can be added without breaking the base class
-                use this for triggers or cached object that depend on properties of the base class
-                inherited is a class method, so it can be used to create triggers without defining a specific property store for the subclass
+                use this for adding callbacks or cached object that depend on properties of the base class
+                inherited is a class method, so it can be used to adding callbacks without defining a specific property store for the subclass
             
             bindable(default_value = None, *, readonly = false)
                 special property that can be set to a reference to something else
@@ -74,7 +73,7 @@ MEMBER PROPERTY DESCRIPTORS
             
             cached(*dependencies, getter=None)
                 creates a property whose value is calculated using getter on access (lazy)
-                the result of the function is cached, and a trigger is added that invalidates the cache as soon as any of the reactive objects in the dependencies raises an alert
+                the result of the function is cached, and a callback is added that invalidates the cache as soon as any of the reactive objects in the dependencies raises an alert
                 this can be used as a decorator as well
                     import ThisModule as cdh
                     class MyClass:
@@ -90,7 +89,7 @@ MEMBER PROPERTY DESCRIPTORS
                 constant is a classmethod, so it can be created even without creating an actual property_store
         
         Once the class is instanciated, the property store instance is automatically created as soon as any property is accessed
-        it can be used to get instances of the storage object associated to the properties (in order to add_observers, invalidate, bind, etc...)
+        it can be used to get instances of the storage object associated to the properties (in order to add_callbacks, invalidate, bind, etc...)
         or to get an autogenerated observable that can be used to bind a boundable property (of any other object) to any member of this instance
 
     @autocreate
@@ -124,7 +123,7 @@ class outer(base):
         def worm(self):
             return "Worm"
 
-        @parent.op1.trigger
+        @parent.op1.add_callback
         def on_op1(self, source):
             print( (self,source) )
         
@@ -134,7 +133,7 @@ class outer(base):
             props = property_store()
             iip1 = props.reactive(3)
         
-            @parent.parent.op1.trigger
+            @parent.parent.op1.add_callback
             def on_op1(self, source):
                 print( (self,source) )
             
@@ -142,11 +141,11 @@ class outer(base):
             def iip2(self):
                 return (self.iip1, self.parent.ip1, self.parent.parent.op1)
     
-    @inner.ip1.trigger
+    @inner.ip1.add_callback
     def on_ip1(self, source):
         print( (self,source) )
 
-    @inner.inner_inner.parent.parent.inner.inner_inner.parent.parent.op1.trigger
+    @inner.inner_inner.parent.parent.inner.inner_inner.parent.parent.op1.add_callback
     def in_and_out(self,source):
         print( (self,source) )
 
@@ -370,7 +369,7 @@ class reactive(observable):
         def init_instance(self, descriptor, instance):
             super().init_instance(descriptor, instance)
             for v in descriptor.observers.values():
-                self.add_observer(types.MethodType(v, instance))
+                self.add_callback(types.MethodType(v, instance))
 
         @property
         def value(self):
@@ -385,13 +384,13 @@ class reactive(observable):
         def check_circular_binding(self, tgt):
             pass
 
-        def add_observer(self, fnc, key=None): #TODO: use weak references to the underlying object --- maybe...
+        def add_callback(self, fnc, key=None): #TODO: use weak references to the underlying object --- maybe...
             if key == None:
                 key = id(fnc)
             self.observers[key] = fnc
             return key
 
-        def del_observer(self, key):
+        def del_callback(self, key):
             del self.observers[key]
 
         def raise_alert(self, reason):
@@ -414,18 +413,14 @@ class reactive(observable):
             return reactive_reference(self)
         return self.get_slot(instance).value
 
-    def add_observer(self, fnc, key=None):
+    def add_callback(self, fnc, key=None):
         if key == None:
             key = id(fnc)
         self.observers[key] = fnc
-        return key
-
-    def del_observer(self, key):
-        del self.observers[key]
-    
-    def trigger(self, fnc):
-        self.add_observer(fnc)
         return fnc
+
+    def del_callback(self, key):
+        del self.observers[key]
 
     def copy(self):
         tmp = type(self)(default_value=self.default_value, readonly=self.readonly, store=self.store)
@@ -457,11 +452,11 @@ class reactive_reference(reactive):
     # def __setattr__(self,name,value):
     #     setattr(self._ref,name,value)
 
-    def add_observer(self, fnc, key=None):
-        return self._ref.add_observer(fnc,key)
+    def add_callback(self, fnc, key=None):
+        return self._ref.add_callback(fnc,key)
 
-    def del_observer(self, key):
-        self._ref.del_observer(key)
+    def del_callback(self, key):
+        self._ref.del_callback(key)
     
     def copy(self):
         return self._ref.copy()
@@ -472,7 +467,7 @@ class inherited_reference(reactive):
         tmp = parent.copy()
         #if the inherited descriptor was not reactive, this will throw
         for key, fnc in self.observers.items():
-            tmp.add_observer(fnc, key)
+            tmp.add_callback(fnc, key)
         #replace the descriptor
         setattr(owner,name,tmp)
 
@@ -498,10 +493,10 @@ class constant(reactive, reactive.instance_helper):
     def __set__(self, instance, value):
         raise AttributeError(f"Cannot set a constant property")
     
-    def add_observer(self, fnc, key=None):
+    def add_callback(self, fnc, key=None):
         pass
 
-    def del_observer(self, key):
+    def del_callback(self, key):
         pass
 
     def init_instance(self, descriptor, instance):
@@ -573,20 +568,20 @@ class bindable(reactive):
 
             if value == None:
                 if self.bound == True and self._value.reactive:
-                    self._value.del_observer(id(self)) #check it is reactive first
+                    self._value.del_callback(id(self)) #check it is reactive first
                 self.bound = False
                 self._value = self.default_value
             elif isinstance(value, observable.instance_helper):
                 value.check_circular_binding(self)
                 if self.bound == True and self._value.reactive:
-                    self._value.del_observer(id(self))
+                    self._value.del_callback(id(self))
                 self.bound = True
                 self._value = value
                 if self._value.reactive:
-                    self._value.add_observer(self.bound_alert, id(self))
+                    self._value.add_callback(self.bound_alert, id(self))
             else:
                 if self.bound == True and self._value.reactive:
-                    self._value.del_observer(id(self))
+                    self._value.del_callback(id(self))
                 self.bound = False
                 self._value = value
             self.raise_alert( (alert_reason(self,"bind",reactive.alert_params(bindable.alert_params(old_bound,old_value),bindable.alert_params(self.bound, self._value))),) )
@@ -616,7 +611,7 @@ class cached(reactive):
                 slot.check_circular_binding(self)
                 if not slot.reactive:
                     raise RuntimeError(f"Cached object dependencies must be reactive: found in {descriptor.name} of class {type(instance).__name__}")
-                slot.add_observer(self.invalidate)
+                slot.add_callback(self.invalidate)
                 self.dependencies.append(slot)
 
         def invalidate(self, reason):
@@ -749,7 +744,7 @@ def assignargs(**kwargs):
         return decorated_function
     return decorate
 
-class delayed_trigger:
+class delayed_callback:
     def __init__(self, fnc, prop_path=(), instance_path=()):
         self.prop_path = prop_path
         self.instance_path = instance_path
@@ -768,7 +763,7 @@ class delayed_trigger:
             if isinstance(prop, parent_reference):
                 if prop._parent_class == None:
                     #not created yet, delay again
-                    prop._delayedTriggers.append(delayed_trigger(self.fnc,self.prop_path[len(new_path):],self.instance_path))
+                    prop._delayed_callbacks.append(delayed_callback(self.fnc,self.prop_path[len(new_path):],self.instance_path))
                     return
                 else:
                     self.instance_path = (prop._parent_class.name, ) + self.instance_path
@@ -779,7 +774,7 @@ class delayed_trigger:
                     prop = inspect.getmro(prop.factory)[1]
                 else:
                     prop = prop.factory
-        prop.add_observer(self)
+        prop.add_callback(self)
 
 class attribute_reference:
     def __init__(self, parent, name):
@@ -810,28 +805,28 @@ class attribute_reference:
         return attribute_reference(self, name)
     
     def __call__(self, *args, **kwargs):
-        if self.__name_in_parent == "trigger" and len(args) == 1 and callable(args[0]) and kwargs == {}:
-            #used as a decorator for a trigger
+        if self.__name_in_parent == "add_callback" and len(args) == 1 and callable(args[0]) and kwargs == {}:
+            #used as a decorator for adding a callback
             prop_path = ()
             ptr = self.__parent
             while isinstance(ptr,attribute_reference):
                 prop_path = (ptr.__name_in_parent, ) + prop_path
                 ptr = ptr.__parent
             if isinstance(ptr, parent_reference) or isinstance(ptr, autocreate):
-                ptr._delayedTriggers.append(delayed_trigger(args[0], prop_path))
+                ptr._delayed_callbacks.append(delayed_callback(args[0], prop_path))
             else:
                 raise TypeError
 
             return args[0]
         else:
-            raise TypeError("'attribute_reference' object is not callable - unless it's a trigger decorator ;-)")
+            raise TypeError("'attribute_reference' object is not callable - unless it's a add_callback decorator ;-)")
 
 class parent_reference:
     def __init__(self):
         self.__name = None
         self.__ownerclass = None
         self._parent_class = None
-        self._delayedTriggers = []
+        self._delayed_callbacks = []
     
     def __set_name__(self, owner, name):
         if self.__name != None and not owner is self.__ownerclass:
@@ -853,7 +848,7 @@ class autocreate:
     def __init__(self, factory):
         self.name = None
         self.ownerclass = None
-        self._delayedTriggers = []
+        self._delayed_callbacks = []
         if type(factory) is type:
             class wrapper(factory):
                 def __init__(child, parent):
@@ -888,19 +883,19 @@ class autocreate:
         self.name = name
         self.ownerclass = owner
         self.parent_reference_member_name = None
-        #create the triggers that have been queued in properties of the outer object
+        #add the callbacks that have been queued in properties of the outer object
         if self.wrapped:
             factory = inspect.getmro(self.factory)[1]
             for k,v in vars(factory).items():
                 if isinstance(v, parent_reference):
                     self.parent_reference_member_name = k
                     v._parent_class = self
-                    for trg in v._delayedTriggers:
+                    for trg in v._delayed_callbacks:
                         trg.instance_path = (name, ) + trg.instance_path
                         trg.attach(owner)
         
-        #create the triggers that have been queued in properties of the inner object
-        for trg in self._delayedTriggers:
+        #add the callbacks that have been queued in properties of the inner object
+        for trg in self._delayed_callbacks:
             trg.prop_path = (name, ) + trg.prop_path
             trg.attach(owner)
 

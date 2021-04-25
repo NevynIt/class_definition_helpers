@@ -291,6 +291,11 @@ class property_store:
     @classmethod
     def inherited(self):
         return inherited_reference()
+    
+    #TODO: maybe useful??
+    def bind(self,target, source):
+        "ensures that, at runtime, target will be bound to source"
+        raise NotImplementedError
 
 alert_reason = namedtuple("alert_reason", ("originator","event","args"))
 
@@ -672,10 +677,11 @@ def assign(**kwargs):
 def assignargs(**kwargs):
     def decorate(fnc):
         def decorated_function(self, *inner_args, **inner_kwargs):
-            tmp = dict(kwargs)
-            tmp.update(inner_kwargs)
             for k in kwargs.keys():
-                setattr(self,k,tmp[k])
+                if k in inner_kwargs:
+                    setattr(self,k,inner_kwargs[k])
+                else:
+                    setattr(self,k,kwargs[k])
             return fnc(self, *inner_args, **tmp)
         return decorated_function
     return decorate
@@ -705,7 +711,7 @@ class delayed_callback:
             elif isinstance(prop, autocreate):
                 self.instance_path = (prop.parent_reference_member_name, ) + self.instance_path
                 if prop.wrapped:
-                    prop = inspect.getmro(prop.factory)[1]
+                    prop = prop.wrapped
                 else:
                     prop = prop.factory
         prop.add_callback(self)

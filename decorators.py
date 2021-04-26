@@ -463,6 +463,21 @@ class constant(reactive, reactive.instance_helper):
     def copy(self):
         return self
 
+class default():
+    def __init__(self, value):
+        self._value = value
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def __get__(self, instance, owner=None):
+        if instance == None:
+            return self
+        return self._value
+
+    def __set__(self, instance, value):
+        vars(instance)[self.name] = value
+
 class bindable(reactive):
     alert_params = namedtuple("alert_params", ("bound","target"))
 

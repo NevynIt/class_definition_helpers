@@ -677,11 +677,10 @@ def assign(**kwargs):
 def assignargs(**kwargs):
     def decorate(fnc):
         def decorated_function(self, *inner_args, **inner_kwargs):
+            tmp = dict(kwargs)
+            tmp.update(inner_kwargs)
             for k in kwargs.keys():
-                if k in inner_kwargs:
-                    setattr(self,k,inner_kwargs[k])
-                else:
-                    setattr(self,k,kwargs[k])
+    	        setattr(self,k,tmp[k])
             return fnc(self, *inner_args, **tmp)
         return decorated_function
     return decorate

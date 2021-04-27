@@ -802,7 +802,10 @@ class parent_reference_host:
         if self.__decorated == None:
             if instance == None:
                 return self
-            return vars(instance)[self.__name]
+            if self.__name in vars(instance):
+                return vars(instance)[self.__name]
+            else:
+                return None
         else:
             return self.__decorated.__get__(instance,owner)
 

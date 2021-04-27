@@ -102,7 +102,7 @@ MEMBER PROPERTY DESCRIPTORS
 Example usage: see tests.py
 """
 
-import types, inspect
+import types, inspect, weakref
 from collections import namedtuple
 
 __all__ = ("baseinit", "call", "assign", "assignargs", "property_store", "autocreate")
@@ -325,9 +325,11 @@ class reactive(observable):
         def check_circular_binding(self, tgt):
             pass
 
-        def add_callback(self, fnc, key=None): #TODO: use weak references to the underlying object --- maybe...
+        def add_callback(self, fnc, key=None):
             if key == None:
                 key = id(fnc)
+            if isinstance(fnc, types.MethodType):
+                fnc = weakref.WeakMethod(fnc)
             self.observers[key] = fnc
             return key
 
@@ -335,8 +337,15 @@ class reactive(observable):
             del self.observers[key]
 
         def raise_alert(self, reason):
-            for fnc in self.observers.values():
-                fnc(reason)
+            for k, v in list(self.observers.items()):
+                if isinstance(v, weakref.WeakMethod):
+                    fnc = v()
+                    if fnc:
+                        fnc(reason)
+                    else:
+                        del self.observers[k] #TODO: not really tested yet!!
+                else:
+                    fnc(reason)
         
         def alert(self, reason):
             self.raise_alert(reason)
@@ -718,7 +727,7 @@ class delayed_callback:
             prop = getattr(prop,key)
             new_path = (key,) + new_path
             if isinstance(prop, parent_reference):
-                assert prop._parent_class == None
+                # assert prop._parent_class == None
                 #not created yet, delay again
                 prop._delayed_callbacks.append(delayed_callback(self.fnc,self.prop_path[len(new_path):],self.instance_path))
                 return
@@ -784,11 +793,33 @@ class attribute_reference:
         else:
             raise TypeError("'attribute_reference' object is not callable - unless it's a add_callback decorator ;-)")
 
+class parent_reference_host:
+    def __init__(self):
+        self.__name = None
+    
+    def __get__(self, instance, owner=None):
+        if instance == None:
+            return self
+        return vars(instance)[self.__name]
+
+    def __set__(self, instance, value):
+        if self.__name in vars(instance):
+            old_value = vars(instance)[self.__name]
+            for k in dir(type(old_value)):
+                v =  getattr(type(old_value), k)
+                if isinstance(v, parent_reference):
+                    setattr(old_value, k, None)
+        vars(instance)[self.__name] = value
+        #connect the triggers
+
+    def __delete__(self,instance):
+        del vars(instance)[self.__name]
+
 class parent_reference:
     def __init__(self):
         self.__name = None
         self.__ownerclass = None
-        self._parent_class = None
+        # self._parent_class = None
         self._delayed_callbacks = []
     
     def __set_name__(self, owner, name):
@@ -804,6 +835,18 @@ class parent_reference:
     
     def __getattr__(self, name):
         return attribute_reference(self, name)
+    
+    def disconnect(self, instance):
+
+    def __set__(self, instance, value):
+        if value == None:
+            for cb in self._delayed_callbacks:
+                raise NotImplementedError
+                #remove the triggers
+        else:
+            for cb in self._delayed_callbacks:
+                raise NotImplementedError
+                #add new triggers
 
 class autocreate:
     parent_reference = parent_reference
@@ -835,8 +878,9 @@ class autocreate:
                 product = self.factory()
                 vars(instance)[self.name] = product
 
-                #assign instance to all parent references
-                for k,v in vars(self.wrapped).items():
+                #assign instance to all parent references directly, so that triggers stored in it will not be created twice
+                for k in dir(self.wrapped):
+                    v = getattr(self.wrapped, k)
                     if isinstance(v, parent_reference):
                         vars(product)[k] = instance
                 
@@ -853,7 +897,8 @@ class autocreate:
 
         return vars(instance)[self.name]
 
-    #TODO: __set__ could be added to make non-wrapped autocreates modifiable after init
+    def __set__(self, instance, value):
+        raise AttributeError("Autocreated class members are read-only")
     
     def __set_name__(self, owner, name):
         if self.name != None:
@@ -864,10 +909,11 @@ class autocreate:
         #add the callbacks that have been queued in the parent_references of the inner object
         if self.wrapped:
             factory = self.wrapped
-            for k,v in vars(factory).items():
+            for k in dir(factory):
+                v = getattr(factory, k)
                 if isinstance(v, parent_reference):
                     self.parent_reference_member_name = k
-                    v._parent_class = self
+                    # v._parent_class = self #not needed
                     for trg in v._delayed_callbacks:
                         trg.instance_path = (name, ) + trg.instance_path
                         trg.attach(owner)

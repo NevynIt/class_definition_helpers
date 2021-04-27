@@ -293,9 +293,9 @@ class property_store:
         return inherited_reference()
     
     #TODO: maybe useful??
-    def bind(self,target, source):
-        "ensures that, at runtime, target will be bound to source"
-        raise NotImplementedError
+    # def bind(self,target, source):
+    #     "ensures that, at runtime, target will be bound to source"
+    #     raise NotImplementedError
 
 alert_reason = namedtuple("alert_reason", ("originator","event","args"))
 
@@ -794,13 +794,17 @@ class attribute_reference:
             raise TypeError("'attribute_reference' object is not callable - unless it's a add_callback decorator ;-)")
 
 class parent_reference_host:
-    def __init__(self):
+    def __init__(self, decorated = None):
         self.__name = None
+        self.__decorated = decorated
     
     def __get__(self, instance, owner=None):
-        if instance == None:
-            return self
-        return vars(instance)[self.__name]
+        if self.__decorated == None:
+            if instance == None:
+                return self
+            return vars(instance)[self.__name]
+        else:
+            return self.__decorated.__get__(instance,owner)
 
     def __set__(self, instance, value):
         if self.__name in vars(instance):
@@ -808,12 +812,22 @@ class parent_reference_host:
             for k in dir(type(old_value)):
                 v =  getattr(type(old_value), k)
                 if isinstance(v, parent_reference):
-                    setattr(old_value, k, None)
-        vars(instance)[self.__name] = value
-        #connect the triggers
+                    v.disconnect(old_value, instance, self.__name)
+        if self.__decorated == None:
+            vars(instance)[self.__name] = value
+        else:
+            self.__decorated.__set__(instance,value)
+        if value != None:
+            for k in dir(type(value)):
+                v =  getattr(type(value), k)
+                if isinstance(v, parent_reference):
+                    v.connect(value, instance, self.__name)
 
     def __delete__(self,instance):
-        del vars(instance)[self.__name]
+        if self.__decorated == None:
+            del vars(instance)[self.__name]
+        else:
+            self.__decorated.__delete__(instance)
 
 class parent_reference:
     def __init__(self):
@@ -836,17 +850,19 @@ class parent_reference:
     def __getattr__(self, name):
         return attribute_reference(self, name)
     
-    def disconnect(self, instance):
+    def connect(self, instance, host, name):
+        assert self.__name in vars(instance), "Parent_reference is already connected"
 
-    def __set__(self, instance, value):
-        if value == None:
-            for cb in self._delayed_callbacks:
-                raise NotImplementedError
-                #remove the triggers
-        else:
-            for cb in self._delayed_callbacks:
-                raise NotImplementedError
-                #add new triggers
+        vars(instance)[self.__name] = host
+        for cb in self._delayed_callbacks:
+            raise NotImplementedError #add the triggers
+
+    def disconnect(self, instance, host, name):
+        assert not self.__name in vars(instance), "Parent_reference is already disconnected"
+        
+        for cb in self._delayed_callbacks:
+            raise NotImplementedError #remove the triggers
+        del vars(instance)[self.__name]
 
 class autocreate:
     parent_reference = parent_reference

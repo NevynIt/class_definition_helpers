@@ -808,6 +808,11 @@ class parent_reference_host:
                 return None
         else:
             return self.__decorated.__get__(instance,owner)
+    
+    def __set_name__(self, owner, name):
+        self.__name = name
+        if self.__decorated != None:
+            self.__decorated.__set_name__(owner,name)
 
     def __set__(self, instance, value):
         if self.__name in vars(instance):

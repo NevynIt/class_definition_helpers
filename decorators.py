@@ -20,6 +20,7 @@ MEMBER FUNCTION DECORATORS
     
     @assignargs(**kwargs)
         similar to assign, but also passes the kwargs as parameters, and updates the default value with any kwarg that is passed at runtime
+        NOTE: the arguments MUST be in the same order as the positional parameters of the function, and positional parameters will take precedence
 
 MEMBER PROPERTY DESCRIPTORS
     property_store:
@@ -703,8 +704,12 @@ def assignargs(**kwargs):
         def decorated_function(self, *inner_args, **inner_kwargs):
             tmp = dict(kwargs)
             tmp.update(inner_kwargs)
+            for i,k in zip(range(len(inner_args)),list(tmp.keys())[:len(inner_args)]):
+                setattr(self,k,inner_args[i])
+                del tmp[k]
             for k in kwargs.keys():
-    	        setattr(self,k,tmp[k])
+                if k in tmp:
+        	        setattr(self,k,tmp[k])
             return fnc(self, *inner_args, **tmp)
         return decorated_function
     return decorate
@@ -793,7 +798,7 @@ class attribute_reference:
         else:
             raise TypeError("'attribute_reference' object is not callable - unless it's a add_callback decorator ;-)")
 
-class parent_reference_host:
+class parent_reference_host: #this thing is mind blowing.....
     def __init__(self, decorated = None):
         self.__name = None
         self.__decorated = decorated
@@ -807,6 +812,7 @@ class parent_reference_host:
             else:
                 return None
         else:
+            raise NotImplementedError #TODO: a wrapped object will not be connected the first time it is used
             return self.__decorated.__get__(instance,owner)
     
     def __set_name__(self, owner, name):

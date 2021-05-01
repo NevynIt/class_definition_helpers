@@ -486,7 +486,7 @@ class default():
     def __get__(self, instance, owner=None):
         if instance == None:
             return self
-        return self._value
+        return vars(instance).get(self.name, self._value)
 
     def __set__(self, instance, value):
         vars(instance)[self.name] = value
@@ -717,9 +717,16 @@ def assignargs(**kwargs):
         return decorated_function
     return decorate
 
-class indexable_method(types.MethodType):
+class indexable_method:
+    def __init__(self, fnc, obj):
+        self.__func__ = fnc
+        self.__self__ = obj
+
     def __getitem__(self,key):
-        self.__call__(key)
+        self.__func__(self.__self__, key)
+    
+    def __call__(self, *args, **kwargs):
+        self.__func__(self.__self__, *args, **kwargs)
 
 class indexable:
     def __init__(self, value):
@@ -828,7 +835,7 @@ class parent_reference_host: #this thing is mind blowing.....
             else:
                 return None
         else:
-            raise NotImplementedError #TODO: a wrapped object will not be connected the first time it is used
+            # raise NotImplementedError #TODO: a wrapped object will not be connected the first time it is used
             return self.__decorated.__get__(instance,owner)
     
     def __set_name__(self, owner, name):

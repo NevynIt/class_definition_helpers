@@ -723,10 +723,10 @@ class indexable_method:
         self.__self__ = obj
 
     def __getitem__(self,key):
-        self.__func__(self.__self__, key)
+        return self.__func__(self.__self__, key)
     
     def __call__(self, *args, **kwargs):
-        self.__func__(self.__self__, *args, **kwargs)
+        return self.__func__(self.__self__, *args, **kwargs)
 
 class indexable:
     def __init__(self, value):

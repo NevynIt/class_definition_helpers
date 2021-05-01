@@ -22,6 +22,9 @@ MEMBER FUNCTION DECORATORS
         similar to assign, but also passes the kwargs as parameters, and updates the default value with any kwarg that is passed at runtime
         NOTE: the arguments MUST be in the same order as the positional parameters of the function, and positional parameters will take precedence
 
+    @indexable
+        decorates a method so that it can be called also as if it the __getitem__ of an array
+
 MEMBER PROPERTY DESCRIPTORS
     property_store:
         add an instance of property_store as a class member and use it to create (and store at runtime) other properties
@@ -713,6 +716,19 @@ def assignargs(**kwargs):
             return fnc(self, *inner_args, **tmp)
         return decorated_function
     return decorate
+
+class indexable_method(types.MethodType):
+    def __getitem__(self,key):
+        self.__call__(key)
+
+class indexable:
+    def __init__(self, value):
+        self.func = value
+
+    def __get__(self, instance, owner=None):
+        if instance == None:
+            return self
+        return indexable_method(self.func, instance)
 
 class delayed_callback:
     def __init__(self, fnc, prop_path=(), instance_path=()):

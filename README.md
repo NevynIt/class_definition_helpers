@@ -30,6 +30,10 @@ in that case, the args or kwargs passed to the decorated function are also passe
 `@assignargs(**kwargs)`
 - similar to assign, but also passes the `kwargs` as parameters, and updates the default value with any kwarg that is passed at runtime
 
+`@indexable`
+- decorates a method so that it can be called also as if it the `__getitem__` of an array
+
+
 ## MEMBER PROPERTY DESCRIPTORS
 `property_store`
 - add an instance of property_store as a class member and use it to create (and store at runtime) other properties

@@ -25,6 +25,10 @@ MEMBER FUNCTION DECORATORS
     @indexable
         decorates a method so that it can be called also as if it the __getitem__ of an array
 
+    @monkey_method
+        decorates a method so that a new function can be assigned at runtime and will bind on the object
+        as if it was a method defined in the class (i.e. will get self when called)
+
 MEMBER PROPERTY DESCRIPTORS
     property_store:
         add an instance of property_store as a class member and use it to create (and store at runtime) other properties

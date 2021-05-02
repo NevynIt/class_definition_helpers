@@ -729,13 +729,32 @@ class indexable_method:
         return self.__func__(self.__self__, *args, **kwargs)
 
 class indexable:
-    def __init__(self, value):
-        self.func = value
+    def __init__(self, fnc):
+        self.func = fnc
 
     def __get__(self, instance, owner=None):
         if instance == None:
             return self
         return indexable_method(self.func, instance)
+
+class monkey_method:
+    def __init__(self, fnc):
+        self.func = fnc
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def __get__(self, instance, owner=None):
+        if instance == None:
+            return self
+        fnc = vars(instance).get(self.name, self.func)
+        return types.MethodType(fnc, instance)
+    
+    def __set__(self, instance, value):
+        vars(instance)[self.name] = value
+    
+    def __delete__(self, instance):
+        del vars(instance)[self.name]
 
 class delayed_callback:
     def __init__(self, fnc, prop_path=(), instance_path=()):

@@ -115,6 +115,10 @@ from collections import namedtuple
 
 __all__ = ("baseinit", "call", "assign", "assignargs", "property_store", "autocreate")
 
+class NotSetException(Exception):
+    def __init__(self, name = "(?)"):
+        super.__init__(f"Property {name} accessed before setting, with no default value")
+
 class observable:
     class instance_helper:
         def __init__(self, descriptor):
@@ -128,6 +132,8 @@ class observable:
 
         @property
         def value(self):
+            if isinstance(self._value, NotSetException):
+                raise self._value
             return self._value
         
         @value.setter
@@ -141,12 +147,14 @@ class observable:
         def reactive(self):
             return False
 
-    def __init__(self, default_value = None, *, store = None, readonly = False):
+    def __init__(self, default_value = NotSetException, *, store = None, readonly = False):
         self.store = store
         self.default_value = default_value
         self.readonly = readonly
     
     def __set_name__(self, owner, name):
+        if self.default_value == NotSetException:
+            self.default_value = NotSetException(self.name)
         self.name = name
         self.store.slots[name] = self
 
@@ -163,6 +171,11 @@ class observable:
         if self.readonly:
             raise AttributeError(f"Property {self.name} of class {type(instance).__name__} is readonly")
         self.get_slot(instance).value = value
+    
+    def __delete__(self, instance):
+        if self.readonly:
+            raise AttributeError(f"Property {self.name} of class {type(instance).__name__} is readonly")
+        self.get_slot(instance).value = self.default_value
 
     def copy(self):
         tmp = type(self)(default_value=self.default_value, readonly=self.readonly, store=self.store)
@@ -190,6 +203,9 @@ class observable_reference(observable):
     def __getattr__(self, name):
         return getattr(self._ref, name)
     
+    def __delete__(self, instance):
+        self._ref.__delete__(instance)
+
     # def __setattr__(self,name,value):
     #     setattr(self._ref,name,value)
     
@@ -322,6 +338,8 @@ class reactive(observable):
 
         @property
         def value(self):
+            if isinstance(self._value, NotSetException):
+                raise self._value
             return self._value
         
         @value.setter
@@ -362,7 +380,7 @@ class reactive(observable):
         def reactive(self):
             return True
 
-    def __init__(self, default_value = None, *, store = None, readonly = False):
+    def __init__(self, default_value = NotSetException, *, store = None, readonly = False):
         super().__init__(default_value=default_value,store=store, readonly=readonly)
         self.observers = {}
 
@@ -407,6 +425,9 @@ class reactive_reference(reactive):
     def __getattr__(self, name):
         return getattr(self._ref, name)
     
+    def __delete__(self, instance):
+        self._ref.__delete__(instance)
+    
     # def __setattr__(self,name,value):
     #     setattr(self._ref,name,value)
 
@@ -450,6 +471,9 @@ class constant(reactive, reactive.instance_helper):
 
     def __set__(self, instance, value):
         raise AttributeError(f"Cannot set a constant property")
+
+    def __delete__(self, instance):
+        raise AttributeError(f"Cannot delete a constant property")
     
     def add_callback(self, fnc, key=None):
         pass
@@ -494,6 +518,9 @@ class default():
 
     def __set__(self, instance, value):
         vars(instance)[self.name] = value
+    
+    def __delete__(self, instance):
+        del vars(instance)[self.name]
 
 class bindable(reactive):
     alert_params = namedtuple("alert_params", ("bound","target"))
@@ -502,13 +529,15 @@ class bindable(reactive):
         def __init__(self, descriptor):
             super().__init__(descriptor)
             self.bound = False
-            self.default_value = descriptor.default_value
+            self.default_value = descriptor.default_value #TODO: check this should be superfluous
 
         @property
         def value(self):
             if self.bound:
                 return self._value.value
             else:
+                if isinstance(self._value, NotSetException):
+                    raise self._value
                 return self._value
         
         @value.setter

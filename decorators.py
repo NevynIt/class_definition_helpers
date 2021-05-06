@@ -113,11 +113,13 @@ Example usage: see tests.py
 import types, inspect, weakref
 from collections import namedtuple
 
+#TODO: Add "thread specific" parameter to cached properties, returning a different instance for each thread  
+
 __all__ = ("baseinit", "call", "assign", "assignargs", "property_store", "autocreate")
 
 class NotSetException(Exception):
     def __init__(self, name = "(?)"):
-        super.__init__(f"Property {name} accessed before setting, with no default value")
+        super().__init__(f"Property {name} accessed before setting, with no default value")
 
 class observable:
     class instance_helper:
@@ -154,7 +156,7 @@ class observable:
     
     def __set_name__(self, owner, name):
         if self.default_value == NotSetException:
-            self.default_value = NotSetException(self.name)
+            self.default_value = NotSetException(name)
         self.name = name
         self.store.slots[name] = self
 
@@ -407,10 +409,10 @@ class reactive(observable):
 class reactive_reference(reactive):
     def __init__(self, ref):
         vars(self)["_ref"] = ref
-    
+
     def __set_name__(self, owner, name):
         pass
-    
+
     def get_slot(self, instance):
         return self._ref.get_slot(instance)
 
@@ -418,10 +420,10 @@ class reactive_reference(reactive):
         if instance == None:
             return self
         return self._ref(instance, owner)
-    
+
     def __set__(self, instance, value):
         self._ref.__set__(instance, value)
-    
+
     def __getattr__(self, name):
         return getattr(self._ref, name)
     
@@ -505,16 +507,21 @@ class constant(reactive, reactive.instance_helper):
         return self
 
 class default():
-    def __init__(self, value):
+    def __init__(self, value = NotSetException):
         self._value = value
 
     def __set_name__(self, owner, name):
+        if self._value == NotSetException:
+            self._value = NotSetException(name)
         self.name = name
 
     def __get__(self, instance, owner=None):
         if instance == None:
             return self
-        return vars(instance).get(self.name, self._value)
+        ret = vars(instance).get(self.name, self._value)
+        if isinstance(ret, NotSetException):
+            raise ret
+        return ret
 
     def __set__(self, instance, value):
         vars(instance)[self.name] = value

@@ -115,8 +115,6 @@ from collections import namedtuple
 
 #TODO: Add "thread specific" parameter to cached properties, returning a different instance for each thread  
 
-__all__ = ("baseinit", "call", "assign", "assignargs", "property_store", "autocreate")
-
 class NotSetException(Exception):
     def __init__(self, name = "(?)"):
         super().__init__(f"Property {name} accessed before setting, with no default value")

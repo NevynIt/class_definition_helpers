@@ -449,7 +449,22 @@ class inherited_reference(reactive):
             tmp.add_callback(fnc, key)
         #replace the descriptor
         setattr(owner,name,tmp)
+        self._ref = tmp
 
+    def get_slot(self, instance):
+        return self._ref.get_slot(instance)
+
+    def __get__(self, instance, owner=None):
+        if instance == None:
+            return self
+        return self._ref(instance, owner)
+
+    def __set__(self, instance, value):
+        self._ref.__set__(instance, value)
+
+    def __delete__(self, instance):
+        self._ref.__delete__(instance)
+        
 class constant(reactive, reactive.instance_helper):
     def __init__(self, value):
         self._value = value
